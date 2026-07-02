@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Flashcards Pro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 20px;
+    background: #f5f5f5;
+    transition: 0.3s;
+  }
+
+  body.dark {
+    background: #121212;
+    color: white;
+  }
+
+  h1 { font-size: 1.6em; }
+
+  .card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    max-width: 420px;
+    margin: 20px auto;
+    padding: 20px;
+  }
+
+  body.dark .card {
+    background: #1e1e1e;
+    color: white;
+  }
+
+  input, select, button {
+    width: 100%;
+    padding: 12px;
+    margin-top: 10px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 15px;
+    box-sizing: border-box;
+  }
+
+  button {
+    background: #222;
+    color: white;
+    cursor: pointer;
+    border: none;
+  }
+
+  button:hover { background: #444; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  button.secondary { background: #888; }
+  button.secondary:hover { background: #999; }
+
+  button.danger { background: #b23b3b; }
+  button.danger:hover { background: #d14a4a; }
+
+  .hidden { display: none; }
+
+  .topbar {
+    max-width: 420px;
+    margin: auto;
+  }
+
+  .small {
+    font-size: 13px;
+    opacity: 0.7;
+    margin-top: 8px;
+  }
+
+  .error {
+    font-size: 13px;
+    color: #d14a4a;
+    margin-top: 8px;
+  }
+
+  .row {
+    display: flex;
+    gap: 8px;
+  }
+  .row button { margin-top: 10px; }
+
+  #word { cursor: pointer; }
+
+  .badge {
+    display: inline-block;
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    margin-top: 6px;
+  }
+  .badge.known { background: #d4edda; color: #256029; }
+  .badge.review { background: #fde2e2; color: #a12f2f; }
+  body.dark .badge.known { background: #204d29; color: #b7e6c2; }
+  body.dark .badge.review { background: #4d2323; color: #f2b8b8; }
+
+  #toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: white;
+    padding: 10px 15px;
+    border-radius: 20px;
+    display: none;
+    z-index: 10;
+  }
+
+  .tab-switch {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .tab-switch button {
+    margin-top: 0;
+    background: #eee;
+    color: #333;
+  }
+  body.dark .tab-switch button { background: #333; color: white; }
+  .tab-switch button.active { background: #222; color: white; }
+  body.dark .tab-switch button.active { background: #555; }
+</style>
+</head>
+
+<body>
+
+<h1>Flashcards Pro</h1>
+
+<div id="toast"></div>
+
+<!-- LOGIN / SIGNUP -->
+<div id="loginBox" class="card">
+  <div class="tab-switch">
+    <button id="tabLogin" class="active" onclick="switchTab('login')">Connexion</button>
+    <button id="tabSignup" onclick="switchTab('signup')">Inscription</button>
+  </div>
+
+  <h3 id="authTitle">Connexion</h3>
+  <input id="email" type="email" placeholder="Email">
+  <input id="password" type="password" placeholder="Mot de passe (min. 6 caractères)">
+  <button id="authBtn" onclick="handleAuth()">Se connecter</button>
+  <div id="authError" class="error hidden"></div>
+  <div class="small" id="authHint">Stockage cloud sécurisé via Supabase, accessible depuis tous tes appareils.</div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+
+  <div class="topbar">
+    <input id="search" placeholder="Rechercher..." oninput="onSearchInput()">
+    <div class="row">
+      <button onclick="toggleDark()">🌙 Mode</button>
+      <button class="secondary" onclick="toggleSrs()">🎯 Mode révision: <span id="srsLabel">Tout</span></button>
+    </div>
+    <div class="small" id="progress"></div>
+  </div>
+
+  <div class="card">
+    <h2 id="word"></h2>
+    <div id="definition" class="hidden"></div>
+    <div id="pronunciation" class="hidden"></div>
+    <div id="synonyms" class="hidden"></div>
+    <div id="statusBadge"></div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button onclick="showDefinition()">📘 Définition</button>
+      <button onclick="speak()">🔊 Prononciation</button>
+    </div>
+    <div class="row">
+      <button onclick="showSynonyms()">🔁 Synonymes</button>
+      <button onclick="shuffle()">🎲 Mélanger</button>
+    </div>
+    <div class="row">
+      <button onclick="prevCard()">⬅️ Précédent</button>
+      <button onclick="nextCard()">➡️ Suivant</button>
+    </div>
+    <div class="row">
+      <button class="secondary" onclick="markKnown()">✅ Connu</button>
+      <button class="secondary" onclick="markReview()">🔁 À revoir</button>
+    </div>
+    <button class="danger" onclick="deleteCard()">❌ Supprimer</button>
+  </div>
+
+  <div class="card">
+    <h3 id="formTitle">Ajouter une carte</h3>
+
+    <input id="newWord" placeholder="Mot">
+    <input id="newDef" placeholder="Définition">
+    <input id="newPron" placeholder="Prononciation">
+    <input id="newSyn" placeholder="Synonymes">
+    <select id="newLang">
+      <option value="en">Anglais (en)</option>
+      <option value="fr">Français (fr)</option>
+      <option value="es">Espagnol (es)</option>
+      <option value="de">Allemand (de)</option>
+    </select>
+
+    <div class="row">
+      <button onclick="saveCard()">💾 Enregistrer</button>
+      <button class="secondary hidden" id="cancelEditBtn" onclick="cancelEdit()">✖️ Annuler</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Sauvegarde locale</h3>
+    <div class="row">
+      <button class="secondary" onclick="exportCards()">⬇️ Exporter JSON</button>
+      <button class="secondary" onclick="triggerImport()">⬆️ Importer JSON</button>
+    </div>
+    <input type="file" id="importFile" accept=".json" class="hidden" onchange="importCards(event)">
+  </div>
+
+  <button class="secondary" onclick="logout()">Se déconnecter</button>
+</div>
+
+<!-- CONFIRM DELETE MODAL -->
+<div id="confirmBox" class="card hidden" style="position:fixed; top:30%; left:50%; transform:translate(-50%,0); z-index:20;">
+  <p id="confirmText">Supprimer cette carte ?</p>
+  <div class="row">
+    <button class="danger" onclick="confirmDelete(true)">Oui, supprimer</button>
+    <button class="secondary" onclick="confirmDelete(false)">Annuler</button>
+  </div>
+</div>
+
+<script>
+
+/* ================= SUPABASE CONFIG =================
+   ⚠️ À REMPLACER par tes propres valeurs (Settings → API dans Supabase) */
+const SUPABASE_URL = "https://anobgiyehlihxxqzldlm.supabase.co";       // ⚠️ À REMPLACER
+const SUPABASE_ANON_KEY = "sb_publishable_m5gpSugdIdaDWIonukghnQ_qVNDXb7x";    // ⚠️ À REMPLACER
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ================= STATE ================= */
+let session = null;
+let cards = [];
+let current = 0;
+let editIndex = null;
+let searchDebounce = null;
+let srsFilter = false;
+let voicesReady = false;
+let authMode = "login"; // "login" ou "signup"
+
+/* ================= UI HELPERS ================= */
+function $(id) { return document.getElementById(id); }
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.style.display = "none", 2000);
+}
+
+function showAuthError(msg) {
+  const e = $("authError");
+  e.textContent = msg;
+  e.classList.remove("hidden");
+}
+
+function clearAuthError() {
+  $("authError").classList.add("hidden");
+}
+
+/* ================= AUTH TABS ================= */
+function switchTab(mode) {
+  authMode = mode;
+  clearAuthError();
+  $("tabLogin").classList.toggle("active", mode === "login");
+  $("tabSignup").classList.toggle("active", mode === "signup");
+  $("authTitle").textContent = mode === "login" ? "Connexion" : "Inscription";
+  $("authBtn").textContent = mode === "login" ? "Se connecter" : "Créer un compte";
+  $("authHint").textContent = mode === "login"
+    ? "Stockage cloud sécurisé via Supabase, accessible depuis tous tes appareils."
+    : "Un email de confirmation te sera envoyé après l'inscription.";
+}
+
+/* ================= AUTH ================= */
+async function handleAuth() {
+  clearAuthError();
+  const email = $("email").value.trim();
+  const password = $("password").value.trim();
+
+  if (!email || !password) return showAuthError("Remplis les champs");
+  if (password.length < 6) return showAuthError("Mot de passe : 6 caractères minimum");
+
+  $("authBtn").disabled = true;
+
+  try {
+    if (authMode === "login") {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      session = data.session;
+      await onLoggedIn();
+    } else {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) throw error;
+
+      if (data.session) {
+        // certains projets Supabase désactivent la confirmation email
+        session = data.session;
+        await onLoggedIn();
+      } else {
+        toast("Vérifie ta boîte mail pour confirmer ton compte");
+        switchTab("login");
+      }
+    }
+  } catch (err) {
+    showAuthError(err.message || "Erreur d'authentification");
+  } finally {
+    $("authBtn").disabled = false;
+  }
+}
+
+async function onLoggedIn() {
+  $("loginBox").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  await load();
+  render();
+}
+
+async function logout() {
+  await supabase.auth.signOut();
+  session = null;
+  cards = [];
+  $("app").classList.add("hidden");
+  $("loginBox").classList.remove("hidden");
+  $("email").value = "";
+  $("password").value = "";
+}
+
+/* auto login si session déjà active (persistée par Supabase) */
+(async function initAuth() {
+  const { data } = await supabase.auth.getSession();
+  if (data.session) {
+    session = data.session;
+    await onLoggedIn();
+  }
+})();
+
+/* ================= VOICES ================= */
+if (typeof speechSynthesis !== "undefined") {
+  speechSynthesis.onvoiceschanged = () => { voicesReady = true; };
+  if (speechSynthesis.getVoices().length > 0) voicesReady = true;
+}
+
+/* ================= DATA: LOAD / SAVE (Supabase) ================= */
+async function load() {
+  const { data, error } = await supabase
+    .from("cards")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    toast("Erreur de chargement");
+    console.error(error);
+    cards = [];
+    return;
+  }
+
+  cards = data.map(c => ({
+    id: c.id,
+    word: c.word,
+    definition: c.definition,
+    pronunciation: c.pronunciation || "",
+    synonyms: c.synonyms || "",
+    language: c.language || "en",
+    status: c.status || "review"
+  }));
+
+  // premier login : propose 2 cartes d'exemple si la table est vide
+  if (cards.length === 0) {
+    await insertCard({ word: "fuerte", definition: "strong", pronunciation: "", synonyms: "", language: "es", status: "review" });
+    await insertCard({ word: "strong", definition: "fort", pronunciation: "", synonyms: "", language: "en", status: "review" });
+    await load();
+  }
+}
+
+async function insertCard(card) {
+  const { error } = await supabase
+    .from("cards")
+    .insert([{ ...card, user_id: session.user.id }]);
+  if (error) { toast("Erreur d'ajout"); console.error(error); return false; }
+  return true;
+}
+
+async function updateCardRemote(id, fields) {
+  const { error } = await supabase
+    .from("cards")
+    .update(fields)
+    .eq("id", id);
+  if (error) { toast("Erreur de mise à jour"); console.error(error); return false; }
+  return true;
+}
+
+async function deleteCardRemote(id) {
+  const { error } = await supabase
+    .from("cards")
+    .delete()
+    .eq("id", id);
+  if (error) { toast("Erreur de suppression"); console.error(error); return false; }
+  return true;
+}
+
+/* ================= FILTER ================= */
+function getFiltered() {
+  const q = $("search").value.toLowerCase();
+  let list = cards.filter(c => c.word.toLowerCase().includes(q));
+  if (srsFilter) list = list.filter(c => c.status === "review");
+  return list;
+}
+
+function onSearchInput() {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => { current = 0; render(); }, 200);
+}
+
+function toggleSrs() {
+  srsFilter = !srsFilter;
+  $("srsLabel").textContent = srsFilter ? "À revoir" : "Tout";
+  current = 0;
+  render();
+}
+
+/* ================= RENDER ================= */
+function render() {
+  const list = getFiltered();
+
+  if (list.length === 0) {
+    $("word").textContent = "Aucune carte";
+    $("definition").textContent = "";
+    $("pronunciation").textContent = "";
+    $("synonyms").textContent = "";
+    $("statusBadge").innerHTML = "";
+    $("progress").textContent = "0 / 0";
+    return;
+  }
+
+  if (current >= list.length) current = 0;
+  if (current < 0) current = list.length - 1;
+
+  const c = list[current];
+
+  $("word").textContent = c.word + " (" + c.language + ")";
+  $("definition").textContent = c.definition;
+  $("pronunciation").textContent = c.pronunciation;
+  $("synonyms").textContent = "Synonymes: " + c.synonyms;
+
+  $("definition").classList.add("hidden");
+  $("pronunciation").classList.add("hidden");
+  $("synonyms").classList.add("hidden");
+
+  $("statusBadge").innerHTML = c.status === "known"
+    ? '<span class="badge known">✅ Connu</span>'
+    : '<span class="badge review">🔁 À revoir</span>';
+
+  $("progress").textContent = `${current + 1} / ${list.length}`;
+}
+
+/* ================= NAV ================= */
+function nextCard() {
+  const list = getFiltered();
+  if (list.length === 0) return;
+  current = (current + 1) % list.length;
+  render();
+}
+
+function prevCard() {
+  const list = getFiltered();
+  if (list.length === 0) return;
+  current = (current - 1 + list.length) % list.length;
+  render();
+}
+
+/* Shuffle : mélange localement l'affichage (l'ordre en base n'a pas besoin de changer,
+   on mélange juste "cards" en mémoire, ce qui suffit pour l'expérience utilisateur) */
+function shuffle() {
+  for (let i = cards.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cards[i], cards[j]] = [cards[j], cards[i]];
+  }
+  current = 0;
+  render();
+  toast("Mélangé");
+}
+
+/* ================= ACTIONS ================= */
+function showDefinition() { $("definition").classList.toggle("hidden"); }
+function showSynonyms() { $("synonyms").classList.toggle("hidden"); }
+
+function speak() {
+  const list = getFiltered();
+  if (list.length === 0) return;
+  const c = list[current];
+
+  function doSpeak() {
+    const utterance = new SpeechSynthesisUtterance(c.word);
+    const lang = (c.language || "en").toLowerCase();
+    const voices = speechSynthesis.getVoices();
+    function pickVoice(code) { return voices.find(v => v.lang.toLowerCase().startsWith(code)); }
+    const langMap = { fr: "fr-FR", en: "en-US", es: "es-ES", de: "de-DE" };
+    utterance.lang = langMap[lang] || "en-US";
+    const voice = pickVoice(lang) || pickVoice("en");
+    if (voice) utterance.voice = voice;
+    speechSynthesis.speak(utterance);
+  }
+
+  if (voicesReady || speechSynthesis.getVoices().length > 0) {
+    doSpeak();
+  } else {
+    speechSynthesis.onvoiceschanged = () => { voicesReady = true; doSpeak(); };
+  }
+}
+
+/* ================= SRS ================= */
+async function markKnown() {
+  const list = getFiltered();
+  if (list.length === 0) return;
+  const c = list[current];
+  c.status = "known";
+  render();
+  await updateCardRemote(c.id, { status: "known" });
+  toast("Marqué comme connu");
+}
+
+async function markReview() {
+  const list = getFiltered();
+  if (list.length === 0) return;
+  const c = list[current];
+  c.status = "review";
+  render();
+  await updateCardRemote(c.id, { status: "review" });
+  toast("Marqué à revoir");
+}
+
+/* ================= ADD / EDIT ================= */
+async function saveCard() {
+  const word = $("newWord").value.trim();
+  const def = $("newDef").value.trim();
+  const pron = $("newPron").value.trim();
+  const syn = $("newSyn").value.trim();
+  const lang = $("newLang").value;
+
+  if (!word || !def) return toast("Mot + définition requis");
+
+  if (editIndex !== null) {
+    const c = cards[editIndex];
+    const fields = { word, definition: def, pronunciation: pron, synonyms: syn, language: lang };
+    Object.assign(c, fields);
+    render();
+    await updateCardRemote(c.id, fields);
+    editIndex = null;
+    $("formTitle").textContent = "Ajouter une carte";
+    $("cancelEditBtn").classList.add("hidden");
+  } else {
+    const newCard = { word, definition: def, pronunciation: pron, synonyms: syn, language: lang, status: "review" };
+    await insertCard(newCard);
+    await load();
+  }
+
+  render();
+  toast("Sauvegardé");
+
+  $("newWord").value = "";
+  $("newDef").value = "";
+  $("newPron").value = "";
+  $("newSyn").value = "";
+  $("newLang").value = "en";
+}
+
+function cancelEdit() {
+  editIndex = null;
+  $("formTitle").textContent = "Ajouter une carte";
+  $("cancelEditBtn").classList.add("hidden");
+  $("newWord").value = "";
+  $("newDef").value = "";
+  $("newPron").value = "";
+  $("newSyn").value = "";
+  $("newLang").value = "en";
+  toast("Édition annulée");
+}
+
+$("word").onclick = function () {
+  const list = getFiltered();
+  if (list.length === 0) return;
+  const c = list[current];
+  const index = cards.indexOf(c);
+  if (index === -1) return;
+
+  editIndex = index;
+  $("newWord").value = c.word;
+  $("newDef").value = c.definition;
+  $("newPron").value = c.pronunciation;
+  $("newSyn").value = c.synonyms;
+  $("newLang").value = c.language || "en";
+  $("formTitle").textContent = "Modifier la carte";
+  $("cancelEditBtn").classList.remove("hidden");
+  toast("Mode édition activé");
+};
+
+/* ================= DELETE ================= */
+let pendingDeleteIndex = null;
+
+function deleteCard() {
+  const list = getFiltered();
+  if (list.length === 0) return;
+  const c = list[current];
+  const index = cards.indexOf(c);
+  if (index === -1) return;
+
+  pendingDeleteIndex = index;
+  $("confirmText").textContent = `Supprimer "${c.word}" ?`;
+  $("confirmBox").classList.remove("hidden");
+}
+
+async function confirmDelete(yes) {
+  $("confirmBox").classList.add("hidden");
+
+  if (yes && pendingDeleteIndex !== null) {
+    const c = cards[pendingDeleteIndex];
+    await deleteCardRemote(c.id);
+    cards.splice(pendingDeleteIndex, 1);
+    current = 0;
+    render();
+    toast("Supprimé");
+  }
+  pendingDeleteIndex = null;
+}
+
+/* ================= EXPORT / IMPORT (toujours en local, en complément du cloud) ================= */
+function exportCards() {
+  const blob = new Blob([JSON.stringify(cards, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `flashcards_export.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast("Export réussi");
+}
+
+function triggerImport() { $("importFile").click(); }
+
+async function importCards(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!Array.isArray(imported)) throw new Error("format invalide");
+
+      for (const c of imported) {
+        await insertCard({
+          word: c.word,
+          definition: c.definition,
+          pronunciation: c.pronunciation || "",
+          synonyms: c.synonyms || "",
+          language: c.language || "en",
+          status: c.status || "review"
+        });
+      }
+      await load();
+      render();
+      toast(`${imported.length} cartes importées`);
+    } catch (err) {
+      toast("Fichier invalide");
+    }
+    event.target.value = "";
+  };
+  reader.readAsText(file);
+}
+
+/* ================= DARK MODE ================= */
+function toggleDark() { document.body.classList.toggle("dark"); }
+
+</script>
+
+</body>
+</html>
