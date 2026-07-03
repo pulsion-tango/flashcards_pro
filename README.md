@@ -4,8 +4,6 @@ Flashcards Pro is a language-learning flashcard app built around the **Leitner s
 
 Live app: https://pulsion-tango.github.io/flashcards_pro/
 
----
-
 ## Features
 
 - **Multi-language vocabulary**: English, French, Spanish, German
@@ -19,15 +17,11 @@ Live app: https://pulsion-tango.github.io/flashcards_pro/
 - **Local JSON export/import** as a backup on top of cloud storage
 - **Dark mode**
 
----
-
 ## Tech stack
 
 - Vanilla HTML / CSS / JavaScript (no framework)
 - [Supabase](https://supabase.com) for authentication and data storage (PostgreSQL + RLS)
 - Deployed as a static site on GitHub Pages
-
----
 
 ## Goal
 
